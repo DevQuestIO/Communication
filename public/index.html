@@ -1,0 +1,374 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chat Application</title>
+  <!-- Include the Socket.IO client script -->
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    /* Styles for the chat application */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    #container {
+      display: flex;
+      height: calc(100vh - 50px); /* Adjusted to account for the header */
+    }
+
+    #conversationList {
+      width: 25%;
+      border-right: 1px solid #ccc;
+      padding: 10px;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+
+    #conversationList h3 {
+      margin-top: 0;
+    }
+
+    #conversationList ul {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    #conversationList li {
+      padding: 10px;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+    }
+
+    #conversationList li:hover {
+      background-color: #f9f9f9;
+    }
+
+    #conversationList li.active {
+      background-color: #e0e0e0;
+    }
+
+    #chatWindow {
+      flex-grow: 1;
+      padding: 10px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #chatHeader {
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    #chat {
+      flex-grow: 1;
+      border: 1px solid #ccc;
+      padding: 10px;
+      overflow-y: auto;
+      background-color: #fff;
+    }
+
+    #fileInput {
+      margin-top: 10px;
+    }
+
+    #messageInputContainer {
+      display: flex;
+      align-items: center;
+      margin-top: 10px;
+    }
+
+    #messageInput {
+      flex-grow: 1;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+
+    #sendBtn {
+      padding: 10px 20px;
+      margin-left: 10px;
+    }
+
+    .message {
+      padding: 5px;
+      margin: 5px 0;
+      max-width: 70%;
+      word-wrap: break-word;
+    }
+
+    .message.sent {
+      align-self: flex-end;
+      background-color: #dcf8c6;
+      border-radius: 10px 0 10px 10px;
+    }
+
+    .message.received {
+      align-self: flex-start;
+      background-color: #fff;
+      border-radius: 0 10px 10px 10px;
+    }
+
+    #resetBtn {
+      margin-top: 10px;
+      padding: 10px;
+      width: 100%;
+    }
+
+    /* Ensure the chat messages are displayed flexibly */
+    #chat {
+      display: flex;
+      flex-direction: column;
+    }
+  </style>
+</head>
+<body>
+  <h2 style="text-align: center; margin: 10px 0;">Chat Application</h2>
+  <div id="container">
+    <div id="conversationList">
+      <h3>Conversations</h3>
+      <ul id="conversations"></ul>
+      <button id="resetBtn">Reset Application</button>
+    </div>
+    <div id="chatWindow">
+      <div id="chatHeader">Select a conversation to start chatting</div>
+      <div id="chat"></div>
+      <input type="file" id="fileInput">
+      <div id="messageInputContainer">
+        <input type="text" id="messageInput" placeholder="Type your message">
+        <button id="sendBtn">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Client-side JavaScript
+    const socket = io();
+    let currentChatUser = null;
+
+    // Get usernames from localStorage
+    let storedUsernames = localStorage.getItem('usernames');
+    let usernames = storedUsernames ? JSON.parse(storedUsernames) : [];
+
+    // Prompt for username
+    let username = prompt('Enter your username');
+
+    if (!usernames.includes(username)) {
+      usernames.push(username);
+      localStorage.setItem('usernames', JSON.stringify(usernames));
+    }
+
+    socket.emit('login', username);
+
+    // Update conversation list based on conversationList event from server
+    socket.on('conversationList', (conversations) => {
+      updateConversationList(conversations);
+    });
+
+    // Update user list (online users)
+    socket.on('userList', (users) => {
+      updateOnlineUsers(users);
+    });
+
+    // Handle userConnected event
+    socket.on('userConnected', (user) => {
+      addOnlineUser(user);
+    });
+
+    // Handle userDisconnected event
+    socket.on('userDisconnected', (data) => {
+      removeOnlineUser(data.username);
+    });
+
+    const onlineUsers = {};
+
+    function updateOnlineUsers(users) {
+      users.forEach(user => {
+        onlineUsers[user.username] = true;
+      });
+      updateConversationList();
+    }
+
+    function addOnlineUser(user) {
+      onlineUsers[user.username] = true;
+      updateConversationList();
+    }
+
+    function removeOnlineUser(username) {
+      delete onlineUsers[username];
+      updateConversationList();
+    }
+
+    function updateConversationList(conversations = []) {
+      const conversationsUl = document.getElementById('conversations');
+      conversationsUl.innerHTML = '';
+      const uniqueUsers = new Set();
+
+      // Add online users
+      Object.keys(onlineUsers).forEach(convUsername => {
+        if (convUsername && convUsername !== username && !uniqueUsers.has(convUsername)) {
+          uniqueUsers.add(convUsername);
+          const conversationLi = document.createElement('li');
+          conversationLi.textContent = convUsername + ' (Online)';
+          conversationLi.dataset.receiver = convUsername;
+          conversationLi.onclick = () => {
+            selectConversation(convUsername);
+          };
+          if (convUsername === currentChatUser) {
+            conversationLi.classList.add('active');
+          }
+          conversationsUl.appendChild(conversationLi);
+        }
+      });
+
+      // Add conversation users
+      conversations.forEach((conv) => {
+        const convUsername = conv.username || conv;
+        if (convUsername && convUsername !== username && !uniqueUsers.has(convUsername)) {
+          uniqueUsers.add(convUsername);
+          const conversationLi = document.createElement('li');
+          conversationLi.textContent = convUsername + (onlineUsers[convUsername] ? ' (Online)' : '');
+          conversationLi.dataset.receiver = convUsername;
+          conversationLi.onclick = () => {
+            selectConversation(convUsername);
+          };
+          if (convUsername === currentChatUser) {
+            conversationLi.classList.add('active');
+          }
+          conversationsUl.appendChild(conversationLi);
+        }
+      });
+    }
+
+    function selectConversation(receiver) {
+      if (receiver === username || !receiver) {
+        alert('Cannot chat with yourself.');
+        return;
+      }
+
+      currentChatUser = receiver;
+      const chatHeader = document.getElementById('chatHeader');
+      chatHeader.textContent = `Chat with ${receiver}`;
+      const chatDiv = document.getElementById('chat');
+      chatDiv.innerHTML = '';
+
+      // Request chat history from server
+      socket.emit('getHistory', { receiver });
+    }
+
+    function displayMessage(data) {
+      const chatDiv = document.getElementById('chat');
+      const messageP = document.createElement('div');
+      messageP.classList.add('message', data.sender === username ? 'sent' : 'received');
+      if (data.message) {
+        messageP.textContent = data.message;
+      } else if (data.fileName) {
+        messageP.innerHTML = `<a href="${data.filePath}" target="_blank">${data.fileName}</a>`;
+      }
+      chatDiv.appendChild(messageP);
+      chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    // Send text message
+    document.getElementById('sendBtn').onclick = () => {
+      const message = document.getElementById('messageInput').value;
+      if (currentChatUser && message.trim() !== '') {
+        if (currentChatUser === username) {
+          alert('Cannot send messages to yourself.');
+          return;
+        }
+        const data = {
+          sender: username,
+          receiver: currentChatUser,
+          message,
+        };
+        socket.emit('message', data);
+        document.getElementById('messageInput').value = '';
+        displayMessage(data);
+      } else {
+        alert('Please select a conversation and enter a message.');
+      }
+    };
+
+    // Receive text message
+    socket.on('message', (data) => {
+      const sender = data.sender;
+      if (currentChatUser === sender || currentChatUser === data.receiver) {
+        displayMessage(data);
+      }
+    });
+
+    // Receive chat history
+    socket.on('chatHistory', (data) => {
+      const { receiver, history } = data;
+      if (currentChatUser === receiver) {
+        const chatDiv = document.getElementById('chat');
+        chatDiv.innerHTML = '';
+        history.forEach((messageData) => {
+          displayMessage(messageData);
+        });
+      }
+    });
+
+    // Handle file upload
+    document.getElementById('fileInput').onchange = () => {
+      const file = document.getElementById('fileInput').files[0];
+      if (currentChatUser && file) {
+        if (currentChatUser === username) {
+          alert('Cannot send files to yourself.');
+          return;
+        }
+        const formData = new FormData();
+        formData.append('file', file);
+
+        fetch('/upload', { method: 'POST', body: formData })
+          .then((res) => res.json())
+          .then((data) => {
+            const messageData = {
+              sender: username,
+              receiver: currentChatUser,
+              fileName: data.fileName,
+              filePath: data.filePath,
+            };
+            socket.emit('media', messageData);
+            displayMessage(messageData);
+          });
+      } else {
+        alert('Please select a conversation and choose a file.');
+      }
+    };
+
+    // Receive media message
+    socket.on('media', (data) => {
+      const sender = data.sender;
+      if (currentChatUser === sender || currentChatUser === data.receiver) {
+        displayMessage(data);
+      }
+    });
+
+    // Reset Button Click Handler
+    document.getElementById('resetBtn').onclick = () => {
+      if (confirm('Are you sure you want to reset the application? This will delete all users and chats from the database.')) {
+        fetch('/reset', { method: 'POST' })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              alert('Application has been reset.');
+              // Reload the page
+              window.location.reload();
+            } else {
+              alert('Failed to reset the application.');
+            }
+          })
+          .catch(err => {
+            console.error('Error resetting the application:', err);
+            alert('An error occurred while resetting the application.');
+          });
+      }
+    };
+  </script>
+</body>
+</html>
