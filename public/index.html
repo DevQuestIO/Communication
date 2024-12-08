@@ -1,374 +1,447 @@
-<!-- public/index.html -->
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Chat Application</title>
-  <!-- Include the Socket.IO client script -->
+  <title>Enhanced Chat Application</title>
   <script src="/socket.io/socket.io.js"></script>
   <style>
-    /* Styles for the chat application */
     body {
-      font-family: Arial, sans-serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       margin: 0;
-      padding: 0;
+      padding: 20px;
+      background-color: #f0f2f5;
     }
 
-    #container {
-      display: flex;
-      height: calc(100vh - 50px); /* Adjusted to account for the header */
+    .container {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 24px;
+      height: calc(100vh - 40px);
+      max-width: 1400px;
+      margin: 0 auto;
     }
 
-    #conversationList {
-      width: 25%;
-      border-right: 1px solid #ccc;
-      padding: 10px;
-      box-sizing: border-box;
-      overflow-y: auto;
-    }
-
-    #conversationList h3 {
-      margin-top: 0;
-    }
-
-    #conversationList ul {
-      list-style-type: none;
-      padding: 0;
-      margin: 0;
-    }
-
-    #conversationList li {
-      padding: 10px;
-      cursor: pointer;
-      border-bottom: 1px solid #eee;
-    }
-
-    #conversationList li:hover {
-      background-color: #f9f9f9;
-    }
-
-    #conversationList li.active {
-      background-color: #e0e0e0;
-    }
-
-    #chatWindow {
-      flex-grow: 1;
-      padding: 10px;
-      box-sizing: border-box;
+    .sidebar {
       display: flex;
       flex-direction: column;
+      gap: 24px;
     }
 
-    #chatHeader {
-      font-weight: bold;
-      margin-bottom: 10px;
+    .user-section {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
-    #chat {
-      flex-grow: 1;
-      border: 1px solid #ccc;
-      padding: 10px;
-      overflow-y: auto;
-      background-color: #fff;
+    .user-section h2 {
+      margin-top: 0;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e4e6eb;
+      color: #1a1a1a;
+      font-size: 1.1rem;
     }
 
-    #fileInput {
-      margin-top: 10px;
+    .user-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
     }
 
-    #messageInputContainer {
+    .user-item {
       display: flex;
+      justify-content: space-between;
       align-items: center;
-      margin-top: 10px;
+      padding: 12px;
+      border-bottom: 1px solid #e4e6eb;
+      transition: background-color 0.2s;
     }
 
-    #messageInput {
+    .user-item:last-child {
+      border-bottom: none;
+    }
+
+    .user-item:hover {
+      background-color: #f7f8fa;
+    }
+
+    .chat-window {
+      display: flex;
+      flex-direction: column;
+      border-radius: 12px;
+      overflow: hidden;
+      background: white;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .chat-header {
+      padding: 20px;
+      background: #ffffff;
+      border-bottom: 1px solid #e4e6eb;
+    }
+
+    .chat-header h2 {
+      margin: 0;
+      color: #1a1a1a;
+      font-size: 1.1rem;
+    }
+
+    .chat-messages {
       flex-grow: 1;
-      padding: 10px;
-      box-sizing: border-box;
-    }
-
-    #sendBtn {
-      padding: 10px 20px;
-      margin-left: 10px;
+      padding: 20px;
+      overflow-y: auto;
+      background: #f0f2f5;
     }
 
     .message {
-      padding: 5px;
-      margin: 5px 0;
+      margin: 12px 0;
+      padding: 12px 16px;
+      border-radius: 18px;
       max-width: 70%;
       word-wrap: break-word;
     }
 
     .message.sent {
-      align-self: flex-end;
-      background-color: #dcf8c6;
-      border-radius: 10px 0 10px 10px;
+      background: #0084ff;
+      color: white;
+      margin-left: auto;
     }
 
     .message.received {
-      align-self: flex-start;
-      background-color: #fff;
-      border-radius: 0 10px 10px 10px;
+      background: white;
+      color: #1a1a1a;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     }
 
-    #resetBtn {
-      margin-top: 10px;
-      padding: 10px;
-      width: 100%;
-    }
-
-    /* Ensure the chat messages are displayed flexibly */
-    #chat {
+    .chat-input {
       display: flex;
-      flex-direction: column;
+      padding: 20px;
+      gap: 12px;
+      background: white;
+      border-top: 1px solid #e4e6eb;
+    }
+
+    .chat-input input {
+      flex-grow: 1;
+      padding: 12px;
+      border: 1px solid #e4e6eb;
+      border-radius: 20px;
+      font-size: 0.95rem;
+      transition: border-color 0.2s;
+    }
+
+    .chat-input input:focus {
+      outline: none;
+      border-color: #0084ff;
+    }
+
+    button {
+      padding: 8px 16px;
+      background: #0084ff;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background-color 0.2s;
+    }
+
+    button:hover {
+      background: #0073e6;
+    }
+
+    button:disabled {
+      background: #e4e6eb;
+      cursor: not-allowed;
+      color: #bcc0c4;
+    }
+
+    .status-badge {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 12px;
+      background: #28a745;
+      color: white;
+    }
+
+    .status-badge.offline {
+      background: #dc3545;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .accept-btn {
+      background: #28a745;
+    }
+
+    .accept-btn:hover {
+      background: #218838;
+    }
+
+    .reject-btn {
+      background: #dc3545;
+    }
+
+    .reject-btn:hover {
+      background: #c82333;
+    }
+
+    .pending-text {
+      color: #6c757d;
+      font-style: italic;
+    }
+
+    #currentUser {
+      font-weight: 500;
+      color: #1a1a1a;
     }
   </style>
 </head>
 <body>
-  <h2 style="text-align: center; margin: 10px 0;">Chat Application</h2>
-  <div id="container">
-    <div id="conversationList">
-      <h3>Conversations</h3>
-      <ul id="conversations"></ul>
-      <button id="resetBtn">Reset Application</button>
+  <div class="container">
+    <div class="sidebar">
+      <div class="user-section">
+        <h2>My Profile</h2>
+        <div id="currentUser"></div>
+      </div>
+
+      <div id="friendsSection" class="user-section hidden">
+        <h2>Friends</h2>
+        <ul id="friendsList" class="user-list"></ul>
+      </div>
+
+      <div id="othersSection" class="user-section">
+        <h2>Other Users</h2>
+        <ul id="othersList" class="user-list"></ul>
+      </div>
+
+      <div id="pendingSection" class="user-section hidden">
+        <h2>Pending Requests</h2>
+        <ul id="pendingList" class="user-list"></ul>
+      </div>
     </div>
-    <div id="chatWindow">
-      <div id="chatHeader">Select a conversation to start chatting</div>
-      <div id="chat"></div>
-      <input type="file" id="fileInput">
-      <div id="messageInputContainer">
-        <input type="text" id="messageInput" placeholder="Type your message">
-        <button id="sendBtn">Send</button>
+
+    <div class="chat-window">
+      <div class="chat-header">
+        <h2 id="chatHeader">Select a friend to start chatting</h2>
+      </div>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input">
+        <input type="text" id="messageInput" placeholder="Type a message..." disabled>
+        <button id="sendButton" disabled>Send</button>
       </div>
     </div>
   </div>
 
   <script>
-    // Client-side JavaScript
     const socket = io();
-    let currentChatUser = null;
+    let currentUsername = '';
+    let currentChatPartner = '';
+    let userData = null;
 
-    // Get usernames from localStorage
-    let storedUsernames = localStorage.getItem('usernames');
-    let usernames = storedUsernames ? JSON.parse(storedUsernames) : [];
-
-    // Prompt for username
-    let username = prompt('Enter your username');
-
-    if (!usernames.includes(username)) {
-      usernames.push(username);
-      localStorage.setItem('usernames', JSON.stringify(usernames));
+    // Prompt for username and connect
+    const username = prompt('Enter your username:');
+    if (username) {
+      socket.emit('login', username);
+      currentUsername = username;
     }
 
-    socket.emit('login', username);
-
-    // Update conversation list based on conversationList event from server
-    socket.on('conversationList', (conversations) => {
-      updateConversationList(conversations);
+    // Handle login success
+    socket.on('loginSuccess', (data) => {
+      userData = data.userData;
+      document.getElementById('currentUser').textContent = `Logged in as: ${currentUsername}`;
+      updateUserLists(data.onlineUsers);
     });
 
-    // Update user list (online users)
-    socket.on('userList', (users) => {
-      updateOnlineUsers(users);
-    });
+    // Update user lists
+    function updateUserLists(users) {
+      const friendsList = document.getElementById('friendsList');
+      const othersList = document.getElementById('othersList');
+      const pendingList = document.getElementById('pendingList');
+      
+      // Clear all lists
+      friendsList.innerHTML = '';
+      othersList.innerHTML = '';
+      pendingList.innerHTML = '';
+      
+      // Track counts for showing/hiding sections
+      let friendCount = 0;
+      let pendingCount = 0;
 
-    // Handle userConnected event
-    socket.on('userConnected', (user) => {
-      addOnlineUser(user);
-    });
-
-    // Handle userDisconnected event
-    socket.on('userDisconnected', (data) => {
-      removeOnlineUser(data.username);
-    });
-
-    const onlineUsers = {};
-
-    function updateOnlineUsers(users) {
       users.forEach(user => {
-        onlineUsers[user.username] = true;
-      });
-      updateConversationList();
-    }
+        const li = document.createElement('li');
+        li.className = 'user-item';
+        
+        const userInfo = document.createElement('span');
+        userInfo.textContent = user.username;
+        li.appendChild(userInfo);
 
-    function addOnlineUser(user) {
-      onlineUsers[user.username] = true;
-      updateConversationList();
-    }
+        const actions = document.createElement('div');
+        actions.className = 'button-group';
 
-    function removeOnlineUser(username) {
-      delete onlineUsers[username];
-      updateConversationList();
-    }
-
-    function updateConversationList(conversations = []) {
-      const conversationsUl = document.getElementById('conversations');
-      conversationsUl.innerHTML = '';
-      const uniqueUsers = new Set();
-
-      // Add online users
-      Object.keys(onlineUsers).forEach(convUsername => {
-        if (convUsername && convUsername !== username && !uniqueUsers.has(convUsername)) {
-          uniqueUsers.add(convUsername);
-          const conversationLi = document.createElement('li');
-          conversationLi.textContent = convUsername + ' (Online)';
-          conversationLi.dataset.receiver = convUsername;
-          conversationLi.onclick = () => {
-            selectConversation(convUsername);
-          };
-          if (convUsername === currentChatUser) {
-            conversationLi.classList.add('active');
+        if (user.isFriend) {
+          const chatBtn = document.createElement('button');
+          chatBtn.textContent = 'Chat';
+          chatBtn.onclick = () => startChat(user.username);
+          actions.appendChild(chatBtn);
+          friendsList.appendChild(li);
+          friendCount++;
+        } else if (user.hasSentRequest || user.hasReceivedRequest) {
+          if (user.hasSentRequest) {
+            const pending = document.createElement('span');
+            pending.textContent = 'Request Sent';
+            pending.className = 'pending-text';
+            actions.appendChild(pending);
+          } else {
+            const acceptBtn = document.createElement('button');
+            acceptBtn.textContent = 'Accept';
+            acceptBtn.className = 'accept-btn';
+            acceptBtn.onclick = () => acceptRequest(user.username);
+            
+            const rejectBtn = document.createElement('button');
+            rejectBtn.textContent = 'Reject';
+            rejectBtn.className = 'reject-btn';
+            rejectBtn.onclick = () => rejectRequest(user.username);
+            
+            actions.appendChild(acceptBtn);
+            actions.appendChild(rejectBtn);
           }
-          conversationsUl.appendChild(conversationLi);
+          pendingList.appendChild(li);
+          pendingCount++;
+        } else {
+          const connectBtn = document.createElement('button');
+          connectBtn.textContent = 'Connect';
+          connectBtn.onclick = () => sendConnectionRequest(user.username);
+          actions.appendChild(connectBtn);
+          othersList.appendChild(li);
         }
+
+        li.appendChild(actions);
       });
 
-      // Add conversation users
-      conversations.forEach((conv) => {
-        const convUsername = conv.username || conv;
-        if (convUsername && convUsername !== username && !uniqueUsers.has(convUsername)) {
-          uniqueUsers.add(convUsername);
-          const conversationLi = document.createElement('li');
-          conversationLi.textContent = convUsername + (onlineUsers[convUsername] ? ' (Online)' : '');
-          conversationLi.dataset.receiver = convUsername;
-          conversationLi.onclick = () => {
-            selectConversation(convUsername);
-          };
-          if (convUsername === currentChatUser) {
-            conversationLi.classList.add('active');
-          }
-          conversationsUl.appendChild(conversationLi);
-        }
-      });
+      // Show/hide sections based on content
+      const friendsSection = document.getElementById('friendsSection');
+      const pendingSection = document.getElementById('pendingSection');
+      const othersSection = document.getElementById('othersSection');
+
+      friendsSection.classList.toggle('hidden', friendCount === 0);
+      pendingSection.classList.toggle('hidden', pendingCount === 0);
+      othersSection.classList.toggle('hidden', othersList.children.length === 0);
     }
 
-    function selectConversation(receiver) {
-      if (receiver === username || !receiver) {
-        alert('Cannot chat with yourself.');
-        return;
-      }
-
-      currentChatUser = receiver;
-      const chatHeader = document.getElementById('chatHeader');
-      chatHeader.textContent = `Chat with ${receiver}`;
-      const chatDiv = document.getElementById('chat');
-      chatDiv.innerHTML = '';
-
-      // Request chat history from server
-      socket.emit('getHistory', { receiver });
+    // Connection request functions
+    function sendConnectionRequest(username) {
+      socket.emit('sendConnectionRequest', username);
     }
 
-    function displayMessage(data) {
-      const chatDiv = document.getElementById('chat');
-      const messageP = document.createElement('div');
-      messageP.classList.add('message', data.sender === username ? 'sent' : 'received');
-      if (data.message) {
-        messageP.textContent = data.message;
-      } else if (data.fileName) {
-        messageP.innerHTML = `<a href="${data.filePath}" target="_blank">${data.fileName}</a>`;
-      }
-      chatDiv.appendChild(messageP);
-      chatDiv.scrollTop = chatDiv.scrollHeight;
+    function acceptRequest(username) {
+      socket.emit('respondToConnection', { from: username, accepted: true });
     }
 
-    // Send text message
-    document.getElementById('sendBtn').onclick = () => {
-      const message = document.getElementById('messageInput').value;
-      if (currentChatUser && message.trim() !== '') {
-        if (currentChatUser === username) {
-          alert('Cannot send messages to yourself.');
-          return;
-        }
-        const data = {
-          sender: username,
-          receiver: currentChatUser,
-          message,
-        };
-        socket.emit('message', data);
-        document.getElementById('messageInput').value = '';
-        displayMessage(data);
-      } else {
-        alert('Please select a conversation and enter a message.');
-      }
+    function rejectRequest(username) {
+      socket.emit('respondToConnection', { from: username, accepted: false });
+    }
+
+    // Chat functions
+    function startChat(username) {
+      currentChatPartner = username;
+      document.getElementById('chatHeader').textContent = `Chat with ${username}`;
+      document.getElementById('messageInput').disabled = false;
+      document.getElementById('sendButton').disabled = false;
+      document.getElementById('chatMessages').innerHTML = '';
+      loadChatHistory(username);
+    }
+
+    function loadChatHistory(username) {
+      // You can implement chat history loading here
+      // For now, we'll just clear the messages
+      document.getElementById('chatMessages').innerHTML = '';
+    }
+
+    // Send message function
+    document.getElementById('sendButton').onclick = sendMessage;
+    document.getElementById('messageInput').onkeypress = (e) => {
+      if (e.key === 'Enter') sendMessage();
     };
 
-    // Receive text message
-    socket.on('message', (data) => {
-      const sender = data.sender;
-      if (currentChatUser === sender || currentChatUser === data.receiver) {
-        displayMessage(data);
-      }
-    });
-
-    // Receive chat history
-    socket.on('chatHistory', (data) => {
-      const { receiver, history } = data;
-      if (currentChatUser === receiver) {
-        const chatDiv = document.getElementById('chat');
-        chatDiv.innerHTML = '';
-        history.forEach((messageData) => {
-          displayMessage(messageData);
+    function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const message = input.value.trim();
+      
+      if (message && currentChatPartner) {
+        socket.emit('message', {
+          receiver: currentChatPartner,
+          message: message
         });
+
+        // Add message to chat window
+        addMessageToChat(message, true);
+        input.value = '';
+      }
+    }
+
+    function addMessageToChat(message, sent = false) {
+      const chatMessages = document.getElementById('chatMessages');
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${sent ? 'sent' : 'received'}`;
+      messageDiv.textContent = message;
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Socket event listeners
+    socket.on('message', (data) => {
+      if (data.sender === currentChatPartner) {
+        addMessageToChat(data.message, false);
       }
     });
 
-    // Handle file upload
-    document.getElementById('fileInput').onchange = () => {
-      const file = document.getElementById('fileInput').files[0];
-      if (currentChatUser && file) {
-        if (currentChatUser === username) {
-          alert('Cannot send files to yourself.');
-          return;
-        }
-        const formData = new FormData();
-        formData.append('file', file);
-
-        fetch('/upload', { method: 'POST', body: formData })
-          .then((res) => res.json())
-          .then((data) => {
-            const messageData = {
-              sender: username,
-              receiver: currentChatUser,
-              fileName: data.fileName,
-              filePath: data.filePath,
-            };
-            socket.emit('media', messageData);
-            displayMessage(messageData);
-          });
-      } else {
-        alert('Please select a conversation and choose a file.');
-      }
-    };
-
-    // Receive media message
-    socket.on('media', (data) => {
-      const sender = data.sender;
-      if (currentChatUser === sender || currentChatUser === data.receiver) {
-        displayMessage(data);
-      }
+    socket.on('connectionRequest', (data) => {
+      // Refresh user lists to show new pending request
+      socket.emit('login', currentUsername);
     });
 
-    // Reset Button Click Handler
-    document.getElementById('resetBtn').onclick = () => {
-      if (confirm('Are you sure you want to reset the application? This will delete all users and chats from the database.')) {
-        fetch('/reset', { method: 'POST' })
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              alert('Application has been reset.');
-              // Reload the page
-              window.location.reload();
-            } else {
-              alert('Failed to reset the application.');
-            }
-          })
-          .catch(err => {
-            console.error('Error resetting the application:', err);
-            alert('An error occurred while resetting the application.');
-          });
-      }
+    socket.on('connectionResponse', (data) => {
+      // Refresh user lists to reflect the updated connection status
+      socket.emit('login', currentUsername);
+    });
+
+    socket.on('userOnline', (data) => {
+      // Refresh user lists to show newly online user
+      socket.emit('login', currentUsername);
+    });
+
+    socket.on('userOffline', (data) => {
+      // Refresh user lists to show newly offline user
+      socket.emit('login', currentUsername);
+    });
+
+    socket.on('messageError', (data) => {
+      alert(data.message);
+    });
+
+    // Error handling
+    socket.on('connect_error', (error) => {
+      console.error('Connection error:', error);
+      alert('Failed to connect to server. Please check your internet connection.');
+    });
+
+    socket.on('connect_timeout', (timeout) => {
+      console.error('Connection timeout:', timeout);
+      alert('Connection timed out. Please try again.');
+    });
+
+    // Cleanup on window close
+    window.onbeforeunload = () => {
+      socket.disconnect();
     };
   </script>
 </body>
-</html>
+</html> -->

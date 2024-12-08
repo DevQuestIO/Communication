@@ -1,264 +1,307 @@
 // server.js
-
 const express = require('express');
 const http = require('http');
-const socketIo = require('socket.io');
-const multer = require('multer');
-const path = require('path');
+const { Server } = require('socket.io');
 const mongoose = require('mongoose');
-const { v4: uuidv4 } = require('uuid');
-
-// Initialize Express app
+const cors = require('cors');
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
 
-// MongoDB connection
-const uri = `mongodb+srv://kalpeshpatil:aAizV2usnKqFAXnY@messaging.qnujm.mongodb.net/?retryWrites=true&w=majority&appName=Messaging`;
-
-mongoose.connect(uri, {
+// MongoDB Connection
+mongoose.connect('mongodb+srv://kalpeshpatil:aAizV2usnKqFAXnY@messaging.qnujm.mongodb.net/?retryWrites=true&w=majority', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-}).then(() => {
-  console.log('Connected to MongoDB Atlas');
-}).catch((err) => {
-  console.error('MongoDB Atlas connection error:', err);
-});
+}).then(() => console.log('Connected to MongoDB'))
+  .catch((err) => console.error('MongoDB connection error:', err));
 
-// Serve static files from 'public' directory
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Middleware to parse JSON bodies
-app.use(express.json());
-
-// Define User Schema
+// User Schema
 const userSchema = new mongoose.Schema({
-  username: { type: String, unique: true },
-  socketId: String,
-});
-const User = mongoose.model('User', userSchema);
-
-// Define Message Schema
-const messageSchema = new mongoose.Schema({
-  conversationId: String,
-  sender: String,
-  receiver: String,
-  message: String,
-  fileName: String,
-  filePath: String,
-  timestamp: { type: Date, default: Date.now },
-});
-const Message = mongoose.model('Message', messageSchema);
-
-// Multer setup for file uploads
-const storage = multer.diskStorage({
-  destination: 'uploads/',
-  filename: (req, file, cb) => {
-    const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
+  username: {
+    type: String,
+    required: true,
+    unique: true,
   },
+  isActive: {
+    type: Boolean,
+    default: true,
+  },
+  lastSeen: {
+    type: Date,
+    default: Date.now,
+  },
+  friends: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  pendingSentRequests: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  pendingReceivedRequests: [{  // Added this field
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  socketId: String
 });
-const upload = multer({ storage });
 
-// Endpoint to handle file uploads
-app.post('/upload', upload.single('file'), (req, res) => {
-  res.json({
-    fileName: req.file.filename,
-    filePath: `/uploads/${req.file.filename}`,
-  });
-});
+const User = mongoose.model('User', userSchema);
+console.log('User', User)
 
-// Serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Endpoint to handle reset request
-app.post('/reset', async (req, res) => {
-  try {
-    // Delete all users and messages from the database
-    await User.deleteMany({});
-    await Message.deleteMany({});
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error resetting the application:', err);
-    res.json({ success: false });
+// Message Schema
+const messageSchema = new mongoose.Schema({
+  sender: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  receiver: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  content: {
+    type: String,
+    required: true
+  },
+  timestamp: {
+    type: Date,
+    default: Date.now
   }
 });
 
-// Helper function to generate conversation IDs
-function getConversationId(user1, user2) {
-  return [user1, user2].sort().join('_');
-}
+const Message = mongoose.model('Message', messageSchema);
 
-// Socket.IO connection handler
+// Middleware
+app.use(cors({
+  origin: "http://localhost:3000",
+  methods: ["GET", "POST"],
+  credentials: true
+}));
+
+app.use(express.json());
+
+// Socket.IO setup
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
+
+  // Socket connection handling
 io.on('connection', (socket) => {
-  console.log(`New client connected: ${socket.id}`);
+  console.log('User connected:', socket.id);
 
-  // Handle user login
-  socket.on('login', async (username) => {
+  socket.on('join', async (username) => {
     try {
-      // Find or create the user
-      let user = await User.findOne({ username });
-      if (!user) {
-        // User does not exist, create a new user
-        user = new User({ username, socketId: socket.id });
-        await user.save();
-      } else {
-        // User exists, update the socketId
-        user.socketId = socket.id;
-        await user.save();
+      const user = await User.findOneAndUpdate(
+        { username },
+        { isActive: true, lastSeen: new Date(), socketId: socket.id },
+        { new: true }
+      );
+      debugger;
+      console.log('User',user);
+      if (user) {
+        socket.join(user._id.toString()); // Join a unique room for this user
+        socket.broadcast.emit('newUserLoggedIn', user);
+        io.emit('userStatusChanged', { userId: user._id, isActive: true });
       }
-
-      // Attach username to socket
-      socket.username = username;
-
-      console.log(`${username} has logged in.`);
-
-      // Get list of online users excluding the current user
-      const users = await User.find({ username: { $ne: username }, socketId: { $ne: null } });
-      socket.emit('userList', users.map((user) => ({
-        id: user.username,
-        username: user.username,
-      })));
-
-      // Notify other users that this user is online
-      socket.broadcast.emit('userConnected', {
-        id: username,
-        username: username,
-      });
-
-      // Get list of users the logged-in user has had conversations with
-      const conversations = await Message.aggregate([
-        // Exclude messages where sender and receiver are the same (self-messages)
-        { $match: { $and: [
-          { $or: [{ sender: username }, { receiver: username }] },
-          { sender: { $ne: username } }, // Exclude self-messages
-          { receiver: { $ne: username } }
-        ]}},
-        {
-          $group: {
-            _id: {
-              $cond: [
-                { $ne: ["$sender", username] },
-                "$sender",
-                "$receiver",
-              ],
-            },
-          },
-        },
-        { $project: { _id: 0, username: "$_id" } },
-      ]);
-
-      // Send conversation list to the logged-in client
-      socket.emit('conversationList', conversations);
-    } catch (err) {
-      console.error('Login error:', err);
+    } catch (error) {
+      console.error('Join error:', error);
     }
   });
+  
 
-  // Handle text messages
-  socket.on('message', async (data) => {
+  socket.on('sendMessage', async (data) => {
     try {
-      // Prevent sending messages to self
-      if (data.sender === data.receiver) {
-        console.warn('User attempted to send a message to themselves.');
-        return;
-      }
-
-      const conversationId = getConversationId(data.sender, data.receiver);
-      const message = new Message({
-        conversationId,
+      const newMessage = new Message({
         sender: data.sender,
         receiver: data.receiver,
-        message: data.message,
+        content: data.content,
       });
-      await message.save();
-
-      // Send the message to the receiver
-      const receiverUser = await User.findOne({ username: data.receiver });
-      if (receiverUser && receiverUser.socketId) {
-        io.to(receiverUser.socketId).emit('message', data);
+      await newMessage.save();
+      
+      console.log('Inside server.js');
+      const receiver = await User.findById(data.receiver);
+      if (receiver && receiver.socketId) {
+        io.to(receiver.socketId).emit('newMessage', newMessage);
+        
+        // Emit notification for the new message
+        io.to(receiver.socketId).emit('notification', {
+          type: 'newMessage',
+          message: `New message from ${data.senderUsername}`,
+        });
       }
-    } catch (err) {
-      console.error('Message error:', err);
+    } catch (error) {
+      console.error('Error sending message:', error);
     }
   });
+  
 
-  // Handle media messages
-  socket.on('media', async (data) => {
-    try {
-      // Prevent sending media to self
-      if (data.sender === data.receiver) {
-        console.warn('User attempted to send media to themselves.');
-        return;
-      }
-
-      const conversationId = getConversationId(data.sender, data.receiver);
-      const mediaMessage = new Message({
-        conversationId,
-        sender: data.sender,
-        receiver: data.receiver,
-        fileName: data.fileName,
-        filePath: data.filePath,
-      });
-      await mediaMessage.save();
-
-      // Send the media message to the receiver
-      const receiverUser = await User.findOne({ username: data.receiver });
-      if (receiverUser && receiverUser.socketId) {
-        io.to(receiverUser.socketId).emit('media', data);
-      }
-    } catch (err) {
-      console.error('Media message error:', err);
-    }
-  });
-
-  // Handle chat history request
-  socket.on('getHistory', async (data) => {
-    try {
-      const { receiver } = data;
-      // Prevent fetching history with self
-      if (socket.username === receiver) {
-        console.warn('User attempted to fetch chat history with themselves.');
-        socket.emit('chatHistory', { receiver, history: [] });
-        return;
-      }
-
-      const conversationId = getConversationId(socket.username, receiver);
-      const history = await Message.find({ conversationId }).sort('timestamp').lean();
-      socket.emit('chatHistory', { receiver, history });
-    } catch (err) {
-      console.error('Get history error:', err);
-    }
-  });
-
-  // Handle disconnect
   socket.on('disconnect', async () => {
     try {
-      const username = socket.username;
-      if (username) {
-        // Update user's socketId to null
-        await User.findOneAndUpdate({ username }, { socketId: null });
-        console.log(`${username} has disconnected.`);
-
-        // Notify other users that this user is offline
-        socket.broadcast.emit('userDisconnected', { username });
-
-        // Update online users list for remaining clients
-        const users = await User.find({ username: { $ne: username }, socketId: { $ne: null } });
-        io.emit('userList', users.map((user) => ({
-          id: user.username,
-          username: user.username,
-        })));
+      const user = await User.findOneAndUpdate(
+        { socketId: socket.id },
+        { isActive: false, lastSeen: new Date() },
+        { new: true }
+      );
+      if (user) {
+        io.emit('userStatusChanged', { userId: user._id, isActive: false });
       }
-    } catch (err) {
-      console.error('Disconnect error:', err);
+    } catch (error) {
+      console.error('Disconnect error:', error);
     }
   });
+
+
+  });  
+
+
+// API Routes
+app.post('/api/users/login', async (req, res) => {
+  try {
+    const { username } = req.body;
+    let user = await User.findOne({ username });
+
+    if (!user) {
+      user = new User({ username });
+      await user.save();
+    }
+
+    user.isActive = true;
+    user.lastSeen = new Date();
+    await user.save();
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: 'Login failed' });
+  }
 });
 
-// Start the server
+app.get('/api/users', async (req, res) => {
+  try {
+    const users = await User.find({});
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+app.get('/api/messages/:senderId/:receiverId', async (req, res) => {
+  try {
+    const { senderId, receiverId } = req.params;
+    const messages = await Message.find({
+      $or: [
+        { sender: senderId, receiver: receiverId },
+        { sender: receiverId, receiver: senderId }
+      ]
+    }).sort({ timestamp: 1 });
+    res.json(messages);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
+app.post('/api/friend-request', async (req, res) => {
+  try {
+    const { fromUserId, toUserId } = req.body;
+    const [fromUser, toUser] = await Promise.all([
+      User.findById(fromUserId),
+      User.findById(toUserId),
+    ]);
+
+    if (!toUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (
+      toUser.pendingReceivedRequests.includes(fromUserId) ||
+      fromUser.pendingSentRequests.includes(toUserId)
+    ) {
+      return res.status(400).json({ error: 'Request already pending' });
+    }
+
+    fromUser.pendingSentRequests.push(toUserId);
+    toUser.pendingReceivedRequests.push(fromUserId);
+
+    await Promise.all([fromUser.save(), toUser.save()]);
+
+    // Emit event only to receiver
+    if (toUser.socketId) {
+      io.to(toUser.socketId).emit('friendRequest', {
+        fromUserId,
+        fromUsername: fromUser.username,
+      });
+    }
+
+    // Emit notification event
+    io.to(toUser.socketId).emit('notification', {
+      type: 'friendRequest',
+      message: `${fromUser.username} sent you a friend request.`,
+    });
+
+
+    res.json({ message: 'Friend request sent' });
+  } catch (error) {
+    console.error('Friend request error:', error);
+    res.status(500).json({ error: 'Failed to send friend request' });
+  }
+});
+
+
+app.post('/api/accept-friend', async (req, res) => {
+  try {
+    const { fromUserId, toUserId } = req.body;
+    const [fromUser, toUser] = await Promise.all([
+      User.findById(fromUserId),
+      User.findById(toUserId)
+    ]);
+
+    // Add to friends lists
+    fromUser.friends.push(toUserId);
+    toUser.friends.push(fromUserId);
+
+    // Remove from pending requests
+    fromUser.pendingSentRequests = fromUser.pendingSentRequests.filter(
+      id => id.toString() !== toUserId
+    );
+    toUser.pendingReceivedRequests = toUser.pendingReceivedRequests.filter(
+      id => id.toString() !== fromUserId
+    );
+
+    await Promise.all([fromUser.save(), toUser.save()]);
+
+    // Notify both users
+    io.to(fromUser.socketId).emit('friendRequestAccepted', { userId: toUserId });
+    io.to(toUser.socketId).emit('friendRequestAccepted', { userId: fromUserId });
+
+    res.json({ message: 'Friend request accepted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to accept friend request' });
+  }
+});
+
+app.post('/api/reject-friend', async (req, res) => {
+  try {
+    const { fromUserId, toUserId } = req.body;
+    const toUser = await User.findById(toUserId);
+    
+    toUser.pendingRequests = toUser.pendingRequests.filter(
+      id => id.toString() !== fromUserId
+    );
+    await toUser.save();
+    
+    io.to(fromUserId).emit('friendRequestRejected', { userId: toUserId });
+    res.json({ message: 'Friend request rejected' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to reject friend request' });
+  }
+});
+
 const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
 });
+
